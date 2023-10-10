@@ -20,6 +20,11 @@ jobs:
           echo "APACHE_VERSION=$APACHE_VERSION" >> $GITHUB_ENV
           echo "ALPINE_VERSION=$ALPINE_VERSION" >> $GITHUB_ENV
 
+      - name: Debug print
+        run: |
+          echo "APACHE_VERSION=$APACHE_VERSION"
+          echo "ALPINE_VERSION=$ALPINE_VERSION"
+
       - name: Setup GitHub CLI
         run: |
           gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"

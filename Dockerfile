@@ -1,7 +1,11 @@
+ARG PLATFORM="amd64"
 ARG ALPINE_VERSION=${ALPINE_VERSION}
 ARG APACHE_VERSION=${APACHE_VERSION}
 
-FROM httpd:${APACHE_VERSION}-alpine${ALPINE_VERSION}
+# Print the platform
+RUN echo "Building for platform: ${PLATFORM}"
+
+FROM --platform=$PLATFORM httpd:${APACHE_VERSION}-alpine${ALPINE_VERSION}
 
 LABEL maintainer="madebymode"
 ENV PHP_HOST php
