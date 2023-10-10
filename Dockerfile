@@ -17,6 +17,7 @@ RUN apk update && apk upgrade && apk add --update --no-cache shared-mime-info ba
     && sed -i 's/^#LoadModule proxy_fcgi_module modules\/mod_proxy_fcgi.so/LoadModule proxy_fcgi_module modules\/mod_proxy_fcgi.so/' /usr/local/apache2/conf/httpd.conf \
     && sed -i 's/^#LoadModule rewrite_module modules\/mod_rewrite.so/LoadModule rewrite_module modules\/mod_rewrite.so/' /usr/local/apache2/conf/httpd.conf \
     && sed -i 's/^#LoadModule deflate_module modules\/mod_deflate.so/LoadModule deflate_module modules\/mod_deflate.so/' /usr/local/apache2/conf/httpd.conf \
+    && sed -i 's/^#LoadModule expires_module modules\/mod_expires.so/LoadModule expires_module modules\/mod_expires.so/' /usr/local/apache2/conf/httpd.conf \
     && sed -i 's/^#Include conf\/extra\/httpd-default.conf/Include conf\/extra\/httpd-default.conf/' /usr/local/apache2/conf/httpd.conf \
     && sed -i '$aIncludeOptional conf/vhosts/*.conf' /usr/local/apache2/conf/httpd.conf \
     && sed -i '$aInclude conf/extra/php-fpm.conf' /usr/local/apache2/conf/httpd.conf \

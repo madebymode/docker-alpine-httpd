@@ -25,4 +25,8 @@ else
 fi
 
 
+echo "#####"
+httpd -M
+echo "#####"
+
 exec "$@"
