@@ -73,4 +73,7 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: mxmd/httpd:${{ env.APACHE_VERSION }}-alpine${{ env.ALPINE_VERSION }}
+          build-args: |
+            APACHE_VERSION=${{ env.APACHE_VERSION }}
+            ALPINE_VERSION=${{ env.ALPINE_VERSION }}
           file: ./Dockerfile
