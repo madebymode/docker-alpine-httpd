@@ -2,10 +2,12 @@ ARG PLATFORM="amd64"
 ARG ALPINE_VERSION=${ALPINE_VERSION}
 ARG APACHE_VERSION=${APACHE_VERSION}
 
-# Print the platform
-RUN echo "Building for platform: ${PLATFORM}"
+FROM httpd:${APACHE_VERSION}-alpine${ALPINE_VERSION}
 
-FROM --platform=$PLATFORM httpd:${APACHE_VERSION}-alpine${ALPINE_VERSION}
+# Redefine the ARGs after FROM
+ARG PLATFORM
+ARG APACHE_VERSION
+ARG ALPINE_VERSION
 
 LABEL maintainer="madebymode"
 ENV PHP_HOST php
