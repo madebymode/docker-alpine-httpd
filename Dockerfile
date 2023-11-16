@@ -30,6 +30,7 @@ RUN apk update && apk upgrade && apk add --update --no-cache shared-mime-info ba
     && sed -i '$aIncludeOptional conf/vhosts/*.conf' /usr/local/apache2/conf/httpd.conf \
     && sed -i '$aInclude conf/extra/php-fpm.conf' /usr/local/apache2/conf/httpd.conf \
     && sed -i '$aInclude conf/extra/server-status.conf' /usr/local/apache2/conf/httpd.conf \
+    && sed -i '$aServerName localhost' /usr/local/apache2/conf/httpd.conf \
     && mkdir -p /usr/local/apache2/conf/vhosts
 
 EXPOSE 80
