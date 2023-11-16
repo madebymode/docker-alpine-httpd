@@ -8,7 +8,7 @@ This Docker image provides an Apache server with an optional PHP-FPM backend. It
 First, make sure you've cloned the repository and you are inside the directory containing the Dockerfile:
 
 ```bash
-docker build -t mxmd/httpd:2.4.57 .
+docker build -t mxmd/httpd:2.4.58 .
 ```
 
 ## Running the Docker Image
@@ -16,7 +16,7 @@ docker build -t mxmd/httpd:2.4.57 .
 You can run the image using:
 
 ```bash
-docker run -d -p 80:80 -p 443:443 mxmd/httpd:2.4.57
+docker run -d -p 80:80 -p 443:443 mxmd/httpd:2.4.58
 ```
 
 ## Custom Entrypoint Features
@@ -63,7 +63,7 @@ You can enable additional Apache modules at runtime by passing the `APACHE_MODUL
 For example, to enable the `ratelimit_module` and `allowmethods_module`:
 
 ```bash
-docker run -d -p 80:80 -p 443:443 -e APACHE_MODULES="ratelimit_module modules/mod_ratelimit.so,allowmethods_module modules/mod_allowmethods.so" mxmd/httpd:2.4.57
+docker run -d -p 80:80 -p 443:443 -e APACHE_MODULES="ratelimit_module modules/mod_ratelimit.so,allowmethods_module modules/mod_allowmethods.so" mxmd/httpd:2.4.58
 ```
 
 This setup ensures flexibility in managing your Apache modules based on different requirements.
@@ -76,13 +76,13 @@ The Docker image allows you to toggle between `production` and `development` set
 - **Production Mode**: Hide server details.
 
     ```bash
-    docker run -d -p 80:80 -p 443:443 -e HOST_ENV=production mxmd/httpd:2.4.57
+    docker run -d -p 80:80 -p 443:443 -e HOST_ENV=production mxmd/httpd:2.4.58
     ```
 
 - **Development Mode**: Display full server details.
 
     ```bash
-    docker run -d -p 80:80 -p 443:443 -e HOST_ENV=development mxmd/httpd:2.4.57
+    docker run -d -p 80:80 -p 443:443 -e HOST_ENV=development mxmd/httpd:2.4.58
     ```
 
 ## Checking Enabled Apache Modules

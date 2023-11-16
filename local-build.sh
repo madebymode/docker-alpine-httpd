@@ -7,5 +7,5 @@ source .env
 docker build \
   --build-arg APACHE_VERSION=$APACHE_VERSION \
   --build-arg ALPINE_VERSION=$ALPINE_VERSION \
-  -t mxmd/httpd:2.4.57-alpine3.18 .
+  -t mxmd/httpd:2.4.58-alpine3.18 .
 

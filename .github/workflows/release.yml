@@ -18,11 +18,13 @@ jobs:
           source .env
           set +a
           echo "APACHE_VERSION=$APACHE_VERSION" >> $GITHUB_ENV
+          echo "APACHE_VERSION_MAJOR=$APACHE_VERSION_MAJOR" >> $GITHUB_ENV
           echo "ALPINE_VERSION=$ALPINE_VERSION" >> $GITHUB_ENV
 
       - name: Debug print
         run: |
           echo "APACHE_VERSION=$APACHE_VERSION"
+          echo "APACHE_VERSION_MAJOR=$APACHE_VERSION_MAJOR"
           echo "ALPINE_VERSION=$ALPINE_VERSION"
 
       - name: Setup GitHub CLI
@@ -60,7 +62,9 @@ jobs:
         with:
           push: false
           platforms: linux/amd64,linux/arm64
-          tags: mxmd/httpd:${{ env.APACHE_VERSION }}-alpine${{ env.ALPINE_VERSION }}
+          tags: |
+            mxmd/httpd:${{ env.APACHE_VERSION }}
+            mxmd/httpd:${{ env.APACHE_VERSION_MAJOR }}
           build-args: |
             APACHE_VERSION=${{ env.APACHE_VERSION }}
             ALPINE_VERSION=${{ env.ALPINE_VERSION }}
@@ -72,7 +76,9 @@ jobs:
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: mxmd/httpd:${{ env.APACHE_VERSION }}-alpine${{ env.ALPINE_VERSION }}
+          tags: |
+            mxmd/httpd:${{ env.APACHE_VERSION }}
+            mxmd/httpd:${{ env.APACHE_VERSION_MAJOR }}
           build-args: |
             APACHE_VERSION=${{ env.APACHE_VERSION }}
             ALPINE_VERSION=${{ env.ALPINE_VERSION }}
