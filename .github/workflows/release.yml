@@ -70,8 +70,7 @@ jobs:
             ALPINE_VERSION=${{ env.ALPINE_VERSION }}
           file: ./Dockerfile
 
-      - name: Push Docker images (if new tag)
-        if: env.RELEASE_CREATED == 'true'
+      - name: Push Docker images
         uses: docker/build-push-action@v4
         with:
           push: true
