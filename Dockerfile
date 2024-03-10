@@ -37,7 +37,7 @@ EXPOSE 80
 EXPOSE 443
 
 # Health check using the Apache server-status page
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=5s --timeout=1s --start-period=1s --retries=3 \
     CMD curl --header "Host: healthcheck.localhost" --fail http://localhost/server-status || exit 1
 
 RUN chmod +x /usr/local/bin/entrypoint
