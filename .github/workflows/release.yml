@@ -70,6 +70,10 @@ jobs:
             ALPINE_VERSION=${{ env.ALPINE_VERSION }}
           file: ./Dockerfile
 
+      - name: Generate build timestamp
+        id: build-timestamp
+        run: echo "BUILD_TIMESTAMP=$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
+
       - name: Push Docker images
         uses: docker/build-push-action@v5
         with:
@@ -78,6 +82,8 @@ jobs:
           tags: |
             mxmd/httpd:${{ env.APACHE_VERSION }}
             mxmd/httpd:${{ env.APACHE_VERSION_MAJOR }}
+            mxmd/httpd:${{ env.APACHE_VERSION }}-${{ env.BUILD_TIMESTAMP }}
+            mxmd/httpd:${{ env.APACHE_VERSION_MAJOR }}-${{ env.BUILD_TIMESTAMP }}
           build-args: |
             APACHE_VERSION=${{ env.APACHE_VERSION }}
             ALPINE_VERSION=${{ env.ALPINE_VERSION }}
