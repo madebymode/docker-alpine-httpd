@@ -34,7 +34,7 @@ jobs:
       - name: Create Releases
         run: |
           TAG_NAME="httpd-${APACHE_VERSION}"
-          DOCKER_HUB_LINK="https://hub.docker.com/layers/mxmd/httpd/${APACHE_VERSION}-alpine${ALPINE_VERSION}/"
+          DOCKER_HUB_LINK="https://hub.docker.com/r/mxmd/httpd/tags?page=&page_size=&ordering=&name=${APACHE_VERSION}"
           if ! gh release view $TAG_NAME > /dev/null 2>&1; then
             # Create GH Release if it does not exist
             gh release create $TAG_NAME \

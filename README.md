@@ -3,12 +3,27 @@
 
 This Docker image provides an Apache server with an optional PHP-FPM backend. It allows for dynamic enabling of Apache modules and adjusts server settings based on environment variables.
 
-## Building the Docker Image
+
+## Docker Hub
+
+You can find our builds here:
+
+https://hub.docker.com/r/mxmd/httpd/tags
+
+ie:
+
+```bash
+docker pull mxmd/httpd:2.4
+```
+
+
+
+## Building the Docker Image Locally
 
 First, make sure you've cloned the repository and you are inside the directory containing the Dockerfile:
 
 ```bash
-docker build -t mxmd/httpd:2.4.58 .
+docker build -t mxmd/httpd:2.4.59 .
 ```
 
 ## Running the Docker Image
@@ -16,7 +31,7 @@ docker build -t mxmd/httpd:2.4.58 .
 You can run the image using:
 
 ```bash
-docker run -d -p 80:80 -p 443:443 mxmd/httpd:2.4.58
+docker run -d -p 80:80 -p 443:443 mxmd/httpd:2.4.59
 ```
 
 ## Custom Entrypoint Features
@@ -63,7 +78,7 @@ You can enable additional Apache modules at runtime by passing the `APACHE_MODUL
 For example, to enable the `ratelimit_module` and `allowmethods_module`:
 
 ```bash
-docker run -d -p 80:80 -p 443:443 -e APACHE_MODULES="ratelimit_module modules/mod_ratelimit.so,allowmethods_module modules/mod_allowmethods.so" mxmd/httpd:2.4.58
+docker run -d -p 80:80 -p 443:443 -e APACHE_MODULES="ratelimit_module modules/mod_ratelimit.so,allowmethods_module modules/mod_allowmethods.so" mxmd/httpd:2.4.59
 ```
 
 This setup ensures flexibility in managing your Apache modules based on different requirements.
@@ -76,13 +91,13 @@ The Docker image allows you to toggle between `production` and `development` set
 - **Production Mode**: Hide server details.
 
     ```bash
-    docker run -d -p 80:80 -p 443:443 -e HOST_ENV=production mxmd/httpd:2.4.58
+    docker run -d -p 80:80 -p 443:443 -e HOST_ENV=production mxmd/httpd:2.4.59
     ```
 
 - **Development Mode**: Display full server details.
 
     ```bash
-    docker run -d -p 80:80 -p 443:443 -e HOST_ENV=development mxmd/httpd:2.4.58
+    docker run -d -p 80:80 -p 443:443 -e HOST_ENV=development mxmd/httpd:2.4.59
     ```
 
 ## Checking Enabled Apache Modules
