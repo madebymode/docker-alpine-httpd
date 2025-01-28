@@ -9,8 +9,8 @@ ARG APACHE_VERSION
 ARG ALPINE_VERSION
 
 LABEL maintainer="madebymode"
-ENV PHP_HOST php
-ENV PHP_PORT 9000
+ENV PHP_HOST=php
+ENV PHP_PORT=9000
 
 ADD php-fpm.conf /usr/local/apache2/conf/extra/
 ADD server-status.conf /usr/local/apache2/conf/extra/
