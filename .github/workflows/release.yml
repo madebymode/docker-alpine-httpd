@@ -7,12 +7,15 @@ on:
   # Allows us to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   create-release-and-build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2
 
       - name: Load .env file
         run: |
@@ -22,6 +25,7 @@ jobs:
           echo "APACHE_VERSION=$APACHE_VERSION" >> $GITHUB_ENV
           echo "APACHE_VERSION_MAJOR=$APACHE_VERSION_MAJOR" >> $GITHUB_ENV
           echo "ALPINE_VERSION=$ALPINE_VERSION" >> $GITHUB_ENV
+          echo "IMAGE_TAG_PREFIX=$APACHE_VERSION" >> $GITHUB_ENV
 
       - name: Debug print
         run: |
@@ -48,21 +52,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4.0.0
         with:
           image: tonistiigi/binfmt:qemu-v8.1.5
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4.0.0
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4.0.0
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
       - name: Build Docker images
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7.0.0
         with:
           push: false
           platforms: linux/amd64,linux/arm64
@@ -79,12 +83,13 @@ jobs:
         run: echo "BUILD_TIMESTAMP=$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
 
       - name: Push Docker images
-        uses: docker/build-push-action@v6
+        id: push-httpd
+        uses: docker/build-push-action@v7.0.0
         with:
           push: true
           provenance: true
           sbom: true
-          attestations: type=sbom,generator=docker/scout
+          attests: type=sbom,generator=docker/scout
           platforms: linux/amd64,linux/arm64
           tags: |
             mxmd/httpd:${{ env.APACHE_VERSION }}
@@ -95,3 +100,41 @@ jobs:
             APACHE_VERSION=${{ env.APACHE_VERSION }}
             ALPINE_VERSION=${{ env.ALPINE_VERSION }}
           file: ./Dockerfile
+
+      - name: Publish digest tag on GitHub
+        if: ${{ steps.push-httpd.outputs.digest != '' }}
+        env:
+          IMAGE_DIGEST: ${{ steps.push-httpd.outputs.digest }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DIGEST_HEX="${IMAGE_DIGEST#sha256:}"
+          DIGEST_TAG="${IMAGE_TAG_PREFIX}-sha256-${DIGEST_HEX}"
+          IMAGE_REF="mxmd/httpd:${IMAGE_TAG_PREFIX}"
+          IMAGE_MAJOR_REF="mxmd/httpd:${APACHE_VERSION_MAJOR}"
+          IMAGE_TIMESTAMP_REF="mxmd/httpd:${IMAGE_TAG_PREFIX}-${BUILD_TIMESTAMP}"
+          IMAGE_MAJOR_TIMESTAMP_REF="mxmd/httpd:${APACHE_VERSION_MAJOR}-${BUILD_TIMESTAMP}"
+          DOCKER_HUB_LINK="https://hub.docker.com/r/mxmd/httpd/tags?page=1&name=${IMAGE_TAG_PREFIX}"
+          RELEASE_NOTES=$(cat <<EOF
+          Immutable Docker manifest digest for ${IMAGE_REF}
+
+          Docker digest: \`${IMAGE_DIGEST}\`
+          Published tags:
+          - \`${IMAGE_REF}\`
+          - \`${IMAGE_MAJOR_REF}\`
+          - \`${IMAGE_TIMESTAMP_REF}\`
+          - \`${IMAGE_MAJOR_TIMESTAMP_REF}\`
+          Digest references:
+          - \`${IMAGE_REF}@${IMAGE_DIGEST}\`
+          - \`${IMAGE_MAJOR_REF}@${IMAGE_DIGEST}\`
+          - \`${IMAGE_TIMESTAMP_REF}@${IMAGE_DIGEST}\`
+          - \`${IMAGE_MAJOR_TIMESTAMP_REF}@${IMAGE_DIGEST}\`
+          Docker Hub tags: ${DOCKER_HUB_LINK}
+          EOF
+          )
+
+          if ! gh release view "${DIGEST_TAG}" > /dev/null 2>&1; then
+            gh release create "${DIGEST_TAG}" \
+              --target "${GITHUB_SHA}" \
+              --title "Docker digest ${DIGEST_TAG}" \
+              --notes "${RELEASE_NOTES}"
+          fi
