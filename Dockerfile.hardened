@@ -1,23 +1,23 @@
 ARG ALPINE_VERSION=3.23
 ARG APACHE_VERSION=2.4.66
 
-# Use TARGETPLATFORM in FROM line
 FROM --platform=$TARGETPLATFORM httpd:${APACHE_VERSION}-alpine${ALPINE_VERSION}
 
-# Redefine the ARGs after FROM (removing PLATFORM)
 ARG APACHE_VERSION
 ARG ALPINE_VERSION
 
 LABEL maintainer="madebymode"
 ENV PHP_HOST=php
 ENV PHP_PORT=9000
+ENV HTTPD_RUNTIME_DIR=/tmp/httpd-runtime
+ENV HTTPD_RUNTIME_CONF_DIR=/tmp/httpd-conf.d
 
 ADD php-fpm.conf /usr/local/apache2/conf/extra/
 ADD server-status.conf /usr/local/apache2/conf/extra/
 
-COPY entrypoint.sh /usr/local/bin/entrypoint
+COPY hardened/entrypoint.sh /usr/local/bin/entrypoint
+COPY hardened/init-httpd.sh /usr/local/bin/init-httpd
 
-# Update, Upgrade, and install required packages
 RUN apk update && apk upgrade && apk add --update --no-cache shared-mime-info bash curl su-exec shadow \
     && rm -rf /var/cache/apk/* \
     && sed -i 's/^#LoadModule status_module modules\/mod_status.so/LoadModule status_module modules\/mod_status.so/' /usr/local/apache2/conf/httpd.conf \
@@ -30,16 +30,16 @@ RUN apk update && apk upgrade && apk add --update --no-cache shared-mime-info ba
     && sed -i '$aIncludeOptional conf/vhosts/*.conf' /usr/local/apache2/conf/httpd.conf \
     && sed -i '$aInclude conf/extra/php-fpm.conf' /usr/local/apache2/conf/httpd.conf \
     && sed -i '$aInclude conf/extra/server-status.conf' /usr/local/apache2/conf/httpd.conf \
+    && sed -i '$aIncludeOptional /tmp/httpd-conf.d/*.conf' /usr/local/apache2/conf/httpd.conf \
     && sed -i '$aServerName localhost' /usr/local/apache2/conf/httpd.conf \
     && mkdir -p /usr/local/apache2/conf/vhosts
 
 EXPOSE 80
 EXPOSE 443
 
-# Health check using the Apache server-status page
 HEALTHCHECK --interval=5s --timeout=1s --start-period=1s --retries=3 \
     CMD curl --header "Host: healthcheck.localhost" --fail http://localhost/server-status || exit 1
 
-RUN chmod +x /usr/local/bin/entrypoint
+RUN chmod +x /usr/local/bin/entrypoint /usr/local/bin/init-httpd
 ENTRYPOINT ["entrypoint"]
 CMD ["httpd-foreground"]
