@@ -51,6 +51,8 @@ For read-only filesystem support, use the hardened tags instead:
 
 - `mxmd/httpd:2.4.66-hardened`
 - `mxmd/httpd:2.4-hardened`
+- `mxmd/httpd:2.4.66-hardened-nonroot`
+- `mxmd/httpd:2.4-hardened-nonroot`
 
 Build the hardened image locally with the default versions:
 
@@ -68,9 +70,17 @@ docker build \
   -t mxmd/httpd:2.4.66-hardened .
 ```
 
+Build the non-root hardened image locally:
+
+```bash
+docker build -f Dockerfile.hardened-nonroot -t mxmd/httpd:2.4.66-hardened-nonroot .
+```
+
 ### Running Hardened Tags with a Read-Only Filesystem
 
-The hardened image supports `--read-only` by generating runtime Apache overrides into `HTTPD_RUNTIME_CONF_DIR` and writing pid or mutex state into `HTTPD_RUNTIME_DIR`.
+The standard hardened image keeps Apache listening on ports `80` and `443` and uses `/tmp` for generated runtime files.
+
+It supports `--read-only` by generating runtime Apache overrides into `HTTPD_RUNTIME_CONF_DIR` and writing pid or mutex state into `HTTPD_RUNTIME_DIR`.
 
 By default those paths are:
 
@@ -115,6 +125,39 @@ docker run -d \
   mxmd/httpd:2.4.66-hardened
 ```
 
+### Running Hardened Non-Root Tags
+
+The non-root hardened image runs as a dedicated `httpd` user with default UID/GID `1000:1000` and listens on unprivileged port `8080`, so you can publish host port `80` to container port `8080` without granting privileged port access inside the container.
+
+By default it uses:
+
+- `HTTPD_RUNTIME_CONF_DIR=/runtime/conf`
+- `HTTPD_RUNTIME_DIR=/runtime/state`
+
+Use it like this:
+
+```bash
+docker run -d \
+  --read-only \
+  --tmpfs /runtime \
+  -p 80:8080 \
+  mxmd/httpd:2.4.66-hardened-nonroot
+```
+
+If you want the container process to match the host user that owns a bind mount, override it with `--user`:
+
+```bash
+docker run -d \
+  --read-only \
+  --tmpfs /runtime \
+  --user "$(id -u):$(id -g)" \
+  -v "$PWD:/usr/local/apache2/htdocs:ro" \
+  -p 80:8080 \
+  mxmd/httpd:2.4.66-hardened-nonroot
+```
+
+This is useful when mounted files are not readable by UID/GID `1000:1000`. The mounted content still needs normal Linux read and execute permissions for the chosen user, and `/runtime` still needs to be writable by that user when you run the image as read-only.
+
 ### Provision Runtime Config Into a Volume
 
 If you want a stricter split between config generation and the Apache listener, you can provision the runtime files into a Docker volume first and then run the hardened container in consume-only mode.
@@ -131,9 +174,7 @@ Populate it with the runtime config:
 docker run --rm \
   -e HOST_ENV=production \
   -e APACHE_MODULES="ratelimit_module modules/mod_ratelimit.so" \
-  -e HTTPD_RUNTIME_DIR=/runtime/state \
-  -e HTTPD_RUNTIME_CONF_DIR=/runtime/conf \
-  -v httpd-runtime:/runtime \
+  -v httpd-runtime:/tmp \
   mxmd/httpd:2.4.66-hardened \
   init-httpd
 ```
@@ -144,9 +185,7 @@ Then start Apache using the provisioned files:
 docker run -d \
   --read-only \
   -e HTTPD_SKIP_GENERATION=1 \
-  -e HTTPD_RUNTIME_DIR=/runtime/state \
-  -e HTTPD_RUNTIME_CONF_DIR=/runtime/conf \
-  -v httpd-runtime:/runtime \
+  -v httpd-runtime:/tmp \
   -p 80:80 \
   -p 443:443 \
   mxmd/httpd:2.4.66-hardened
@@ -162,10 +201,8 @@ services:
     environment:
       HOST_ENV: production
       APACHE_MODULES: ratelimit_module modules/mod_ratelimit.so
-      HTTPD_RUNTIME_DIR: /runtime/state
-      HTTPD_RUNTIME_CONF_DIR: /runtime/conf
     volumes:
-      - httpd-runtime:/runtime
+      - httpd-runtime:/tmp
 
   httpd:
     image: mxmd/httpd:2.4.66-hardened
@@ -175,10 +212,8 @@ services:
         condition: service_completed_successfully
     environment:
       HTTPD_SKIP_GENERATION: "1"
-      HTTPD_RUNTIME_DIR: /runtime/state
-      HTTPD_RUNTIME_CONF_DIR: /runtime/conf
     volumes:
-      - httpd-runtime:/runtime
+      - httpd-runtime:/tmp
     ports:
       - "80:80"
       - "443:443"
