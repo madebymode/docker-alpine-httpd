@@ -160,6 +160,8 @@ This is useful when mounted files are not readable by UID/GID `1000:1000`. The m
 
 When you mount your own vhost files into `conf/vhosts`, update them to use `<VirtualHost *:8080>` so they match the non-root listener. Publish the host port to container port `8080`, for example `-p 80:8080` or Compose `ports: ["8080:8080"]`.
 
+The non-root image also uses a dedicated internal healthcheck vhost on `*:8080` and probes it via `127.0.0.1`, so container health does not depend on privileged port bindings or IPv6 localhost name resolution.
+
 ### Provision Runtime Config Into a Volume
 
 If you want a stricter split between config generation and the Apache listener, you can provision the runtime files into a Docker volume first and then run the hardened container in consume-only mode.
