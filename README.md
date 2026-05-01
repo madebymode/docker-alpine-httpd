@@ -131,15 +131,15 @@ The non-root hardened image runs as a dedicated `httpd` user with default UID/GI
 
 By default it uses:
 
-- `HTTPD_RUNTIME_CONF_DIR=/runtime/conf`
-- `HTTPD_RUNTIME_DIR=/runtime/state`
+- `HTTPD_RUNTIME_CONF_DIR=/tmp/httpd-conf.d`
+- `HTTPD_RUNTIME_DIR=/tmp/httpd-runtime`
 
 Use it like this:
 
 ```bash
 docker run -d \
   --read-only \
-  --tmpfs /runtime \
+  --tmpfs /tmp \
   -p 80:8080 \
   mxmd/httpd:2.4.66-hardened-nonroot
 ```
@@ -149,14 +149,16 @@ If you want the container process to match the host user that owns a bind mount,
 ```bash
 docker run -d \
   --read-only \
-  --tmpfs /runtime \
+  --tmpfs /tmp \
   --user "$(id -u):$(id -g)" \
   -v "$PWD:/usr/local/apache2/htdocs:ro" \
   -p 80:8080 \
   mxmd/httpd:2.4.66-hardened-nonroot
 ```
 
-This is useful when mounted files are not readable by UID/GID `1000:1000`. The mounted content still needs normal Linux read and execute permissions for the chosen user, and `/runtime` still needs to be writable by that user when you run the image as read-only.
+This is useful when mounted files are not readable by UID/GID `1000:1000`. The mounted content still needs normal Linux read and execute permissions for the chosen user, and `/tmp` still needs to be writable by that user when you run the image as read-only.
+
+When you mount your own vhost files into `conf/vhosts`, update them to use `<VirtualHost *:8080>` so they match the non-root listener. Publish the host port to container port `8080`, for example `-p 80:8080` or Compose `ports: ["8080:8080"]`.
 
 ### Provision Runtime Config Into a Volume
 

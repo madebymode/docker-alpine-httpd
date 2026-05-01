@@ -9,8 +9,8 @@ ARG ALPINE_VERSION
 LABEL maintainer="madebymode"
 ENV PHP_HOST=php
 ENV PHP_PORT=9000
-ENV HTTPD_RUNTIME_DIR=/runtime/state
-ENV HTTPD_RUNTIME_CONF_DIR=/runtime/conf
+ENV HTTPD_RUNTIME_DIR=/tmp/httpd-runtime
+ENV HTTPD_RUNTIME_CONF_DIR=/tmp/httpd-conf.d
 
 ADD php-fpm.conf /usr/local/apache2/conf/extra/
 ADD server-status.conf /usr/local/apache2/conf/extra/
@@ -37,10 +37,9 @@ RUN apk update && apk upgrade && apk add --update --no-cache shared-mime-info ba
     && sed -i '$aInclude conf/extra/server-status.conf' /usr/local/apache2/conf/httpd.conf \
     && sed -i '$aIncludeOptional /tmp/httpd-conf.d/*.conf' /usr/local/apache2/conf/httpd.conf \
     && sed -i '$aServerName localhost' /usr/local/apache2/conf/httpd.conf \
-    && sed -i 's#/tmp/httpd-conf.d/\*\.conf#/runtime/conf/*.conf#' /usr/local/apache2/conf/httpd.conf \
     && sed -i 's/<VirtualHost \\*:80>/<VirtualHost *:8080>/' /usr/local/apache2/conf/extra/server-status.conf \
-    && mkdir -p /usr/local/apache2/conf/vhosts /runtime/conf /runtime/state \
-    && chown -R httpd:httpd /runtime /usr/local/apache2/logs /usr/local/apache2/htdocs /usr/local/apache2/conf/vhosts
+    && mkdir -p /usr/local/apache2/conf/vhosts \
+    && chown -R httpd:httpd /usr/local/apache2/logs /usr/local/apache2/htdocs /usr/local/apache2/conf/vhosts
 
 EXPOSE 8080
 
