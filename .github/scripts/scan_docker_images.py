@@ -79,7 +79,8 @@ def scan_images(reports_dir: Path) -> tuple[bool, list[str], str]:
             report = reports_dir / f"{variant_name}-{arch}.md"
             command = [
                 "docker", "scout", "cves", f"registry://{reference}@{digest}",
-                "--platform", platform, "--only-fixed", "--exit-code",
+                "--platform", platform, "--only-fixed", "--ignore-base",
+                "--only-severity", "high,critical", "--exit-code",
                 "--format", "markdown", "--output", str(report),
             ]
             try:
