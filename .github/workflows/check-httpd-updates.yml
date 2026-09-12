@@ -1,0 +1,64 @@
+name: Check HTTPD Alpine Version Updates
+
+on:
+  schedule:
+    - cron: '0 9 * * *' # Daily at 09:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: httpd-alpine-version-updates-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check-httpd-version:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+      ref: ${{ steps.commit.outputs.ref }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.0.0
+        with:
+          python-version: '3.x'
+
+      - name: Fetch and apply upstream HTTPD Alpine updates
+        run: python3 .github/scripts/update_httpd_alpine_versions.py
+
+      - name: Commit updated version
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .env
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No HTTPD Alpine updates detected."
+            exit 0
+          fi
+
+          git diff --cached --stat >> "$GITHUB_STEP_SUMMARY"
+          git commit -m "chore: update HTTPD Alpine base version $(date +%Y-%m-%d)"
+          git push origin "HEAD:$GITHUB_REF_NAME"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build-updated-image:
+    needs: check-httpd-version
+    if: needs.check-httpd-version.outputs.changed == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      ref: ${{ needs.check-httpd-version.outputs.ref }}
+    secrets: inherit
