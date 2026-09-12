@@ -301,6 +301,58 @@ The Docker image allows you to toggle between `production` and `development` set
     docker run -d -p 80:80 -p 443:443 -e HOST_ENV=development mxmd/httpd:2.4.66
     ```
 
+## GitHub Actions and CI
+
+### Workflow Overview
+
+| Workflow | Trigger | Behavior |
+| --- | --- | --- |
+| [Release](.github/workflows/release.yml) | Push to `master`; manual run; reusable workflow call | Builds and publishes all three image variants (standard, hardened, hardened-nonroot), publishes attestations, image tags, and GitHub releases. |
+| [Check HTTPD Alpine Version Updates](.github/workflows/check-httpd-updates.yml) | Daily at **09:00 UTC**; manual run | Fetches the latest HTTPD Alpine patch version, commits the updated `.env` directly to the branch, then calls the release workflow to publish changed images. |
+| [Scan Docker Images for Fixes](.github/workflows/scan-docker-images.yml) | Daily at **11:00 UTC**; manual run | Scans published images with Docker Scout and triggers fresh rebuilds only for images with fixable CVEs. |
+
+### Builds, Tags, and Releases
+
+Publishing builds use Docker Buildx and QEMU for `linux/amd64` and `linux/arm64`. They publish maximum-mode provenance, SBOM attestations, and these Docker Hub tags:
+
+| Image variant | Published tag examples |
+| --- | --- |
+| Standard | `2.4.68`, `2.4`, `2.4.68-YYYYMMDDHHMM`, `2.4-YYYYMMDDHHMM` |
+| Hardened | `2.4.68-hardened`, `2.4-hardened`, `2.4.68-hardened-YYYYMMDDHHMM` |
+| Hardened non-root | `2.4.68-hardened-nonroot`, `2.4-hardened-nonroot`, `2.4.68-hardened-nonroot-YYYYMMDDHHMM` |
+
+GitHub releases are created for new image-tag prefixes and for each new published manifest digest. Digest release notes include the Docker digest, published tags, and digest references.
+
+The shared release workflow accepts these inputs from other workflows:
+
+| Input | Purpose |
+| --- | --- |
+| `ref` | Checks out the commit to build and uses it as the GitHub release target. |
+| `fresh_build` | Pulls base images and disables the build cache. Scout-triggered rebuilds enable this. |
+| `cve_list` | Comma-separated CVE IDs patched in this build; appended to the release notes. |
+
+### Automated Version Updates
+
+The HTTPD version updater reads the latest patch release from the Apache downloads index via [`update_httpd_alpine_versions.py`](.github/scripts/update_httpd_alpine_versions.py). When a new patch version is detected it updates `.env`, commits directly to the branch, and calls the release workflow to publish the updated images.
+
+### Scheduled Docker Scout Scans
+
+The Scout workflow scans the published rolling tags for all three variants. Only CVEs with available fixes trigger rebuilds. Rebuilds pull base images and rebuild every layer so available OS-level fixes are picked up. Detailed Markdown reports are saved in the `scout-reports` artifact for 30 days.
+
+### Running Workflows Manually
+
+Open the repository's **Actions** tab, select a workflow, choose **Run workflow**, and select the branch. Use **Release** for a full publishing build, **Check HTTPD Alpine Version Updates** to pull the latest patch version, or **Scan Docker Images for Fixes** to check for available CVE fixes.
+
+### Credentials and Permissions
+
+| Credential | Use |
+| --- | --- |
+| `DOCKER_HUB_USERNAME` | Repository secret used to log in to Docker Hub. |
+| `DOCKER_HUB_ACCESS_TOKEN` | Repository secret for publishing to `mxmd/httpd` and authenticating Docker Scout. |
+| `GITHUB_TOKEN` | Supplied automatically by GitHub Actions for repository access, update commits, and GitHub releases. |
+
+---
+
 ## Checking Enabled Apache Modules
 
 Upon starting the Docker container, the enabled Apache modules are printed to the console. To view them, you can check the container logs:

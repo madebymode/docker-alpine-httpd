@@ -6,6 +6,23 @@ on:
       - 'master'
   # Allows us to run this workflow manually from the Actions tab
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      fresh_build:
+        description: Pull base images and rebuild all layers to pick up available package fixes
+        type: boolean
+        default: false
+      ref:
+        description: Commit to check out and build
+        type: string
+        default: ''
+      cve_list:
+        description: Comma-separated CVE IDs patched in this build (appended to release notes)
+        type: string
+        default: ''
+
+permissions:
+  contents: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -16,6 +33,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Record source commit
+        run: echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Load .env file
         run: |
@@ -37,16 +59,26 @@ jobs:
         run: |
           gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Create Releases
+      - name: Create or update release
         run: |
           TAG_NAME="httpd-${APACHE_VERSION}"
           DOCKER_HUB_LINK="https://hub.docker.com/r/mxmd/httpd/tags?page=&page_size=&ordering=&name=${APACHE_VERSION}"
-          if ! gh release view $TAG_NAME > /dev/null 2>&1; then
-            # Create GH Release if it does not exist
-            gh release create $TAG_NAME \
+          CVE_LIST="${{ inputs.cve_list }}"
+
+          if ! gh release view "$TAG_NAME" > /dev/null 2>&1; then
+            gh release create "$TAG_NAME" \
               --title "Apache ${APACHE_VERSION} release" \
               --notes "Release of Docker image for Apache ${APACHE_VERSION}. [View on Docker Hub]($DOCKER_HUB_LINK)"
             echo "RELEASE_CREATED=true" >> $GITHUB_ENV
+          fi
+
+          if [[ -n "$CVE_LIST" ]]; then
+            PATCH_DATE=$(date +%Y-%m-%d)
+            CURRENT_NOTES=$(gh release view "$TAG_NAME" --json body -q .body 2>/dev/null || echo "")
+            CVE_FORMATTED=$(echo "$CVE_LIST" | sed 's/,/`, `/g')
+            PATCH_NOTE="**CVE Patch (${PATCH_DATE}):** Rebuilt to patch fixable CVEs detected by Docker Scout: \`${CVE_FORMATTED}\`"
+            UPDATED_NOTES="${CURRENT_NOTES}"$'\n\n'"${PATCH_NOTE}"
+            gh release edit "$TAG_NAME" --notes "$UPDATED_NOTES"
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -69,6 +101,8 @@ jobs:
         uses: docker/build-push-action@v7.0.0
         with:
           push: false
+          pull: ${{ inputs.fresh_build || false }}
+          no-cache: ${{ inputs.fresh_build || false }}
           platforms: linux/amd64,linux/arm64
           tags: |
             mxmd/httpd:${{ env.APACHE_VERSION }}
@@ -82,6 +116,8 @@ jobs:
         uses: docker/build-push-action@v7.0.0
         with:
           push: false
+          pull: ${{ inputs.fresh_build || false }}
+          no-cache: ${{ inputs.fresh_build || false }}
           platforms: linux/amd64,linux/arm64
           tags: |
             mxmd/httpd:${{ env.APACHE_VERSION }}-hardened
@@ -95,6 +131,8 @@ jobs:
         uses: docker/build-push-action@v7.0.0
         with:
           push: false
+          pull: ${{ inputs.fresh_build || false }}
+          no-cache: ${{ inputs.fresh_build || false }}
           platforms: linux/amd64,linux/arm64
           tags: |
             mxmd/httpd:${{ env.APACHE_VERSION }}-hardened-nonroot
@@ -113,6 +151,8 @@ jobs:
         uses: docker/build-push-action@v7.0.0
         with:
           push: true
+          pull: ${{ inputs.fresh_build || false }}
+          no-cache: ${{ inputs.fresh_build || false }}
           provenance: mode=max
           sbom: true
           attests: type=sbom,generator=docker/scout
@@ -132,6 +172,8 @@ jobs:
         uses: docker/build-push-action@v7.0.0
         with:
           push: true
+          pull: ${{ inputs.fresh_build || false }}
+          no-cache: ${{ inputs.fresh_build || false }}
           provenance: mode=max
           sbom: true
           attests: type=sbom,generator=docker/scout
@@ -151,6 +193,8 @@ jobs:
         uses: docker/build-push-action@v7.0.0
         with:
           push: true
+          pull: ${{ inputs.fresh_build || false }}
+          no-cache: ${{ inputs.fresh_build || false }}
           provenance: mode=max
           sbom: true
           attests: type=sbom,generator=docker/scout
@@ -198,7 +242,7 @@ jobs:
 
           if ! gh release view "${DIGEST_TAG}" > /dev/null 2>&1; then
             gh release create "${DIGEST_TAG}" \
-              --target "${GITHUB_SHA}" \
+              --target "${SOURCE_SHA}" \
               --title "Docker digest ${DIGEST_TAG}" \
               --notes "${RELEASE_NOTES}"
           fi
@@ -236,7 +280,7 @@ jobs:
 
           if ! gh release view "${DIGEST_TAG}" > /dev/null 2>&1; then
             gh release create "${DIGEST_TAG}" \
-              --target "${GITHUB_SHA}" \
+              --target "${SOURCE_SHA}" \
               --title "Docker digest ${DIGEST_TAG}" \
               --notes "${RELEASE_NOTES}"
           fi
@@ -274,7 +318,7 @@ jobs:
 
           if ! gh release view "${DIGEST_TAG}" > /dev/null 2>&1; then
             gh release create "${DIGEST_TAG}" \
-              --target "${GITHUB_SHA}" \
+              --target "${SOURCE_SHA}" \
               --title "Docker digest ${DIGEST_TAG}" \
               --notes "${RELEASE_NOTES}"
           fi
