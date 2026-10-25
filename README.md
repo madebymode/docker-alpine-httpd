@@ -328,7 +328,7 @@ The shared release workflow accepts these inputs from other workflows:
 | Input | Purpose |
 | --- | --- |
 | `ref` | Checks out the commit to build and uses it as the GitHub release target. |
-| `fresh_build` | Pulls base images and disables the build cache. Scout-triggered rebuilds enable this. |
+| `fresh_build` | Disables the build cache so package upgrades run again. Scout-triggered rebuilds enable this, and manual releases default to it. All builds pull base images. |
 | `cve_list` | Comma-separated CVE IDs patched in this build; appended to the release notes. |
 
 ### Automated Version Updates
@@ -337,11 +337,11 @@ The HTTPD version updater reads the latest patch release from the Apache downloa
 
 ### Scheduled Docker Scout Scans
 
-The Scout workflow scans the published rolling tags for all three variants. Only CVEs with available fixes trigger rebuilds. Rebuilds pull base images and rebuild every layer so available OS-level fixes are picked up. Detailed Markdown reports are saved in the `scout-reports` artifact for 30 days.
+The Scout workflow scans the published version tags for all three variants on both architectures, including packages inherited from the base image. Only high or critical CVEs with available fixes trigger rebuilds. Rebuilds pull base images and rebuild every layer so available OS-level fixes are picked up by `apk upgrade`. Detailed Markdown reports are saved in the `scout-reports` artifact for 30 days.
 
 ### Running Workflows Manually
 
-Open the repository's **Actions** tab, select a workflow, choose **Run workflow**, and select the branch. Use **Release** for a full publishing build, **Check HTTPD Alpine Version Updates** to pull the latest patch version, or **Scan Docker Images for Fixes** to check for available CVE fixes.
+Open the repository's **Actions** tab, select a workflow, choose **Run workflow**, and select the branch. Use **Create Releases and Build Docker images** for a full publishing build; leave `fresh_build` enabled to pick up package fixes even when the Apache and Alpine versions have not changed. Use **Check HTTPD Alpine Version Updates** to pull the latest patch version, or **Scan Docker Images for Fixes** to check for available CVE fixes.
 
 ### Credentials and Permissions
 

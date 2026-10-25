@@ -6,6 +6,11 @@ on:
       - 'master'
   # Allows us to run this workflow manually from the Actions tab
   workflow_dispatch:
+    inputs:
+      fresh_build:
+        description: Rebuild all layers to pick up available package fixes
+        type: boolean
+        default: true
   workflow_call:
     inputs:
       fresh_build:
@@ -101,7 +106,7 @@ jobs:
         uses: docker/build-push-action@v7.0.0
         with:
           push: false
-          pull: ${{ inputs.fresh_build || false }}
+          pull: true
           no-cache: ${{ inputs.fresh_build || false }}
           platforms: linux/amd64,linux/arm64
           tags: |
@@ -116,7 +121,7 @@ jobs:
         uses: docker/build-push-action@v7.0.0
         with:
           push: false
-          pull: ${{ inputs.fresh_build || false }}
+          pull: true
           no-cache: ${{ inputs.fresh_build || false }}
           platforms: linux/amd64,linux/arm64
           tags: |
@@ -131,7 +136,7 @@ jobs:
         uses: docker/build-push-action@v7.0.0
         with:
           push: false
-          pull: ${{ inputs.fresh_build || false }}
+          pull: true
           no-cache: ${{ inputs.fresh_build || false }}
           platforms: linux/amd64,linux/arm64
           tags: |
@@ -151,7 +156,7 @@ jobs:
         uses: docker/build-push-action@v7.0.0
         with:
           push: true
-          pull: ${{ inputs.fresh_build || false }}
+          pull: true
           no-cache: ${{ inputs.fresh_build || false }}
           provenance: mode=max
           sbom: true
@@ -172,7 +177,7 @@ jobs:
         uses: docker/build-push-action@v7.0.0
         with:
           push: true
-          pull: ${{ inputs.fresh_build || false }}
+          pull: true
           no-cache: ${{ inputs.fresh_build || false }}
           provenance: mode=max
           sbom: true
@@ -193,7 +198,7 @@ jobs:
         uses: docker/build-push-action@v7.0.0
         with:
           push: true
-          pull: ${{ inputs.fresh_build || false }}
+          pull: true
           no-cache: ${{ inputs.fresh_build || false }}
           provenance: mode=max
           sbom: true

@@ -77,9 +77,10 @@ def scan_images(reports_dir: Path) -> tuple[bool, list[str], str]:
         for platform in PLATFORMS:
             arch = platform.split("/")[1]
             report = reports_dir / f"{variant_name}-{arch}.md"
+            # Include base-image packages: apk upgrade can pick up their fixes.
             command = [
                 "docker", "scout", "cves", f"registry://{reference}@{digest}",
-                "--platform", platform, "--only-fixed", "--ignore-base",
+                "--platform", platform, "--only-fixed",
                 "--only-severity", "high,critical", "--exit-code",
                 "--format", "markdown", "--output", str(report),
             ]
