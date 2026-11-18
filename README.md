@@ -309,17 +309,17 @@ The Docker image allows you to toggle between `production` and `development` set
 | --- | --- | --- |
 | [Release](.github/workflows/release.yml) | Push to `master`; manual run; reusable workflow call | Builds and publishes all three image variants (standard, hardened, hardened-nonroot), publishes attestations, image tags, and GitHub releases. |
 | [Check HTTPD Alpine Version Updates](.github/workflows/check-httpd-updates.yml) | Daily at **09:00 UTC**; manual run | Fetches the latest HTTPD Alpine patch version, commits the updated `.env` directly to the branch, then calls the release workflow to publish changed images. |
-| [Scan Docker Images for Fixes](.github/workflows/scan-docker-images.yml) | Daily at **11:00 UTC**; manual run | Scans published images with Docker Scout and triggers fresh rebuilds only for images with fixable CVEs. |
+| [Scan Docker Images for Fixes](.github/workflows/scan-docker-images.yml) | Daily at **11:00 UTC**; manual run | Scans published images, checks package-fix availability, and publishes Scout rebuilds only after verifying improvement. |
 
 ### Builds, Tags, and Releases
 
-Publishing builds use Docker Buildx and QEMU for `linux/amd64` and `linux/arm64`. They publish maximum-mode provenance, SBOM attestations, and these Docker Hub tags:
+Publishing builds use Docker Buildx and QEMU for `linux/amd64` and `linux/arm64`. All three variants are built once under unique `candidate-RUN_ID-RUN_ATTEMPT` tags (with variant suffixes). Scout rebuilds must pass the verification gate before promotion; ordinary version updates and manual releases promote after successful builds. Promotion copies the exact candidate manifest indexes, preserving maximum-mode provenance and SBOM attestations, to these Docker Hub tags:
 
 | Image variant | Published tag examples |
 | --- | --- |
-| Standard | `2.4.68`, `2.4`, `2.4.68-YYYYMMDDHHMM`, `2.4-YYYYMMDDHHMM` |
-| Hardened | `2.4.68-hardened`, `2.4-hardened`, `2.4.68-hardened-YYYYMMDDHHMM` |
-| Hardened non-root | `2.4.68-hardened-nonroot`, `2.4-hardened-nonroot`, `2.4.68-hardened-nonroot-YYYYMMDDHHMM` |
+| Standard | `2.4.68`, `2.4`, `2.4.68-YYYYMMDDHHMMSS`, `2.4-YYYYMMDDHHMMSS` |
+| Hardened | `2.4.68-hardened`, `2.4-hardened`, `2.4.68-hardened-YYYYMMDDHHMMSS` |
+| Hardened non-root | `2.4.68-hardened-nonroot`, `2.4-hardened-nonroot`, `2.4.68-hardened-nonroot-YYYYMMDDHHMMSS` |
 
 GitHub releases are created for new image-tag prefixes and for each new published manifest digest. Digest release notes include the Docker digest, published tags, and digest references.
 
@@ -329,7 +329,7 @@ The shared release workflow accepts these inputs from other workflows:
 | --- | --- |
 | `ref` | Checks out the commit to build and uses it as the GitHub release target. |
 | `fresh_build` | Disables the build cache so package upgrades run again. Scout-triggered rebuilds enable this, and manual releases default to it. All builds pull base images. |
-| `cve_list` | Comma-separated CVE IDs patched in this build; appended to the release notes. |
+| `cve_list` | CVEs targeted by an automatic Scout rebuild; enables mandatory before/after verification before public tags move. Release notes use verified scan results, not this requested list. |
 
 ### Automated Version Updates
 
@@ -337,7 +337,17 @@ The HTTPD version updater reads the latest patch release from the Apache downloa
 
 ### Scheduled Docker Scout Scans
 
-The Scout workflow scans the published version tags for all three variants on both architectures, including packages inherited from the base image. Only high or critical CVEs with available fixes trigger rebuilds. Rebuilds pull base images and rebuild every layer so available OS-level fixes are picked up by `apk upgrade`. Detailed Markdown reports are saved in the `scout-reports` artifact for 30 days.
+The Scout workflow scans the published version tags for all three variants on both architectures, including packages inherited from the base image. It checks high or critical CVEs with known fixes, then tries `apk update` and `apk upgrade` in disposable containers pinned to the scanned digests. A rebuild is requested only if the installed version of an affected Alpine package reaches Scout's fixed version. This checks each architecture independently. Advisory fixes that are not yet in the configured Alpine repositories are reported as waiting for upstream, without publishing another unchanged image. Non-APK fixes require an upstream image/version update; the daily version-update workflow handles Apache releases. Scan or repository failures fail the scan and prevent automatic rebuilds.
+
+Requested rebuilds pull base images and rebuild every layer. Before any public release tags move, Scout compares the exact candidate digests against the currently published digests for all six variant/platform combinations. This comparison includes **all high/critical findings**, including unfixed ones. Publication requires at least one removed finding across those combinations and no newly introduced finding in any combination; scan failures and ineffective rebuilds block publication. Partial fixes are permitted, and a CVE is listed as resolved only when it is absent from every candidate variant and architecture.
+
+GitHub release notes are updated after promotion and list verified resolved CVEs, remaining high/critical CVEs, and a link to the run's reports. SARIF reports and package availability logs are saved in `scout-reports`; before/after reports, immutable digests, and the verification summary are saved in `scout-verification`. Both artifacts are retained for 30 days. Candidate tags remain available for inspecting rejected builds. Publishing jobs share a concurrency group to prevent overlapping promotion and verification runs.
+
+Run the workflow regression tests locally with:
+
+```bash
+python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+```
 
 ### Running Workflows Manually
 

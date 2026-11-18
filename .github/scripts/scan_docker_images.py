@@ -3,12 +3,13 @@
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+from scout_reports import Finding, scan
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 IMAGE_REPO = "mxmd/httpd"
@@ -46,10 +47,61 @@ def resolve_digest(reference: str) -> str:
     return digest
 
 
-def extract_cve_ids(report_path: Path) -> list[str]:
-    if not report_path.exists():
-        return []
-    return sorted(set(re.findall(r"CVE-\d{4}-\d+", report_path.read_text())))
+def available_fixes(reference: str, platform: str, findings: set[Finding], log: Path) -> set[str]:
+    """Try package upgrades in an isolated, disposable copy of the published image.
+
+    Scout's fixed_version is advisory metadata, not proof that the configured
+    Alpine repositories have published that revision for this architecture.
+    Non-APK fixes need an upstream image/version update, handled separately.
+    """
+    packages: dict[str, set[str]] = {}
+    for finding in findings:
+        if finding.package.startswith("pkg:apk/alpine/"):
+            package = finding.package.rsplit("/", 1)[1]
+            if not re.fullmatch(r"[a-zA-Z0-9+_.-]+", package):
+                raise ValueError(f"Invalid APK package: {package}")
+            if not re.fullmatch(r"[a-zA-Z0-9+_.-]+", finding.fixed):
+                raise ValueError(f"Invalid APK fixed version: {finding.fixed!r}")
+            packages.setdefault(package, set()).add(finding.fixed)
+    if not packages:
+        log.write_text("No APK fixes to probe; upstream version update required.\n")
+        return set()
+
+    script = r'''
+set -eu
+apk update >&2
+apk upgrade >&2
+apk info -v > /tmp/scout-installed-packages
+while [ "$#" -gt 0 ]; do
+    package=$1
+    fixed=$2
+    shift 2
+    installed=$(awk -v prefix="$package-" 'index($0, prefix) == 1 {version = substr($0, length(prefix) + 1); if (version ~ /^[0-9]/) print version}' /tmp/scout-installed-packages)
+    [ -n "$installed" ] || exit 1
+    printf '%s installed=%s required=%s\n' "$package" "$installed" "$fixed" >&2
+    comparison=$(apk version -t "$installed" "$fixed")
+    case "$comparison" in
+        '='|'>') printf '%s\t%s\n' "$package" "$fixed" ;;
+        '<') : ;;
+        *) exit 1 ;;
+    esac
+done
+'''
+    arguments = [value for package, versions in sorted(packages.items())
+                 for version in sorted(versions) for value in (package, version)]
+    result = subprocess.run(
+        ["docker", "run", "--rm", "--pull=always", "--platform", platform,
+         "--user", "0", "--entrypoint", "sh", reference, "-c", script,
+         "scout-availability", *arguments],
+        capture_output=True, text=True, timeout=600,
+    )
+    log.write_text(result.stdout + result.stderr)
+    if result.returncode:
+        raise RuntimeError(f"APK availability check failed: {reference} ({platform}); see {log}")
+    available = {tuple(line.split("\t")) for line in result.stdout.splitlines()}
+    return {finding.cve for finding in findings
+            if finding.package.startswith("pkg:apk/alpine/")
+            and (finding.package.rsplit("/", 1)[1], finding.fixed) in available}
 
 
 def scan_images(reports_dir: Path) -> tuple[bool, list[str], str]:
@@ -76,29 +128,25 @@ def scan_images(reports_dir: Path) -> tuple[bool, list[str], str]:
         fixable = False
         for platform in PLATFORMS:
             arch = platform.split("/")[1]
-            report = reports_dir / f"{variant_name}-{arch}.md"
-            # Include base-image packages: apk upgrade can pick up their fixes.
-            command = [
-                "docker", "scout", "cves", f"registry://{reference}@{digest}",
-                "--platform", platform, "--only-fixed",
-                "--only-severity", "high,critical", "--exit-code",
-                "--format", "markdown", "--output", str(report),
-            ]
+            report = reports_dir / f"{variant_name}-{arch}.sarif.json"
             try:
-                result = subprocess.run(command, capture_output=True, text=True, timeout=600)
-                report.with_suffix(".log").write_text(result.stdout + result.stderr)
-                if result.returncode == 0:
+                findings = scan(f"{reference}@{digest}", platform, report, only_fixed=True)
+                if not findings:
                     status = "No fixable CVEs"
-                elif result.returncode == 2:
-                    status = "Fixes available; rebuild requested"
-                    fixable = True
-                    all_cves.update(extract_cve_ids(report))
                 else:
-                    status = f"Scan failed (exit {result.returncode})"
-                    errors.append(f"{reference} ({platform}): {status}")
-            except subprocess.TimeoutExpired:
-                status = "Scan timed out"
-                errors.append(f"{reference} ({platform}): timed out")
+                    available = available_fixes(
+                        f"{reference}@{digest}", platform, findings,
+                        reports_dir / f"{variant_name}-{arch}-availability.log",
+                    )
+                    if available:
+                        status = "Package fixes available; verified rebuild requested"
+                        fixable = True
+                        all_cves.update(available)
+                    else:
+                        status = "Fixes reported but unavailable from configured repositories; waiting for upstream"
+            except (subprocess.SubprocessError, RuntimeError, ValueError, KeyError, OSError) as exc:
+                status = "Scan or package availability check failed"
+                errors.append(f"{reference} ({platform}): {exc}")
             summary.append(f"| `{reference}@{digest}` | {platform} | {status} |")
             print(f"{reference} ({platform}): {status}", flush=True)
         if fixable:

@@ -22,7 +22,7 @@ on:
         type: string
         default: ''
       cve_list:
-        description: Comma-separated CVE IDs patched in this build (appended to release notes)
+        description: CVEs targeted by an automatic rebuild; publication requires verified improvement
         type: string
         default: ''
 
@@ -31,6 +31,10 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: httpd-image-publication
+  cancel-in-progress: false
 
 jobs:
   create-release-and-build:
@@ -43,6 +47,9 @@ jobs:
 
       - name: Record source commit
         run: echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Test Scout automation
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
 
       - name: Load .env file
         run: |
@@ -64,30 +71,6 @@ jobs:
         run: |
           gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Create or update release
-        run: |
-          TAG_NAME="httpd-${APACHE_VERSION}"
-          DOCKER_HUB_LINK="https://hub.docker.com/r/mxmd/httpd/tags?page=&page_size=&ordering=&name=${APACHE_VERSION}"
-          CVE_LIST="${{ inputs.cve_list }}"
-
-          if ! gh release view "$TAG_NAME" > /dev/null 2>&1; then
-            gh release create "$TAG_NAME" \
-              --title "Apache ${APACHE_VERSION} release" \
-              --notes "Release of Docker image for Apache ${APACHE_VERSION}. [View on Docker Hub]($DOCKER_HUB_LINK)"
-            echo "RELEASE_CREATED=true" >> $GITHUB_ENV
-          fi
-
-          if [[ -n "$CVE_LIST" ]]; then
-            PATCH_DATE=$(date +%Y-%m-%d)
-            CURRENT_NOTES=$(gh release view "$TAG_NAME" --json body -q .body 2>/dev/null || echo "")
-            CVE_FORMATTED=$(echo "$CVE_LIST" | sed 's/,/`, `/g')
-            PATCH_NOTE="**CVE Patch (${PATCH_DATE}):** Rebuilt to patch fixable CVEs detected by Docker Scout: \`${CVE_FORMATTED}\`"
-            UPDATED_NOTES="${CURRENT_NOTES}"$'\n\n'"${PATCH_NOTE}"
-            gh release edit "$TAG_NAME" --notes "$UPDATED_NOTES"
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4.0.0
         with:
@@ -102,56 +85,11 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
-      - name: Build Docker images
-        uses: docker/build-push-action@v7.0.0
-        with:
-          push: false
-          pull: true
-          no-cache: ${{ inputs.fresh_build || false }}
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            mxmd/httpd:${{ env.APACHE_VERSION }}
-            mxmd/httpd:${{ env.APACHE_VERSION_MAJOR }}
-          build-args: |
-            APACHE_VERSION=${{ env.APACHE_VERSION }}
-            ALPINE_VERSION=${{ env.ALPINE_VERSION }}
-          file: ./Dockerfile
-
-      - name: Build hardened Docker images
-        uses: docker/build-push-action@v7.0.0
-        with:
-          push: false
-          pull: true
-          no-cache: ${{ inputs.fresh_build || false }}
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            mxmd/httpd:${{ env.APACHE_VERSION }}-hardened
-            mxmd/httpd:${{ env.APACHE_VERSION_MAJOR }}-hardened
-          build-args: |
-            APACHE_VERSION=${{ env.APACHE_VERSION }}
-            ALPINE_VERSION=${{ env.ALPINE_VERSION }}
-          file: ./Dockerfile.hardened
-
-      - name: Build hardened nonroot Docker images
-        uses: docker/build-push-action@v7.0.0
-        with:
-          push: false
-          pull: true
-          no-cache: ${{ inputs.fresh_build || false }}
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            mxmd/httpd:${{ env.APACHE_VERSION }}-hardened-nonroot
-            mxmd/httpd:${{ env.APACHE_VERSION_MAJOR }}-hardened-nonroot
-          build-args: |
-            APACHE_VERSION=${{ env.APACHE_VERSION }}
-            ALPINE_VERSION=${{ env.ALPINE_VERSION }}
-          file: ./Dockerfile.hardened-nonroot
-
       - name: Generate build timestamp
         id: build-timestamp
-        run: echo "BUILD_TIMESTAMP=$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
+        run: echo "BUILD_TIMESTAMP=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
 
-      - name: Push Docker images
+      - name: Push candidate Docker images
         id: push-httpd
         uses: docker/build-push-action@v7.0.0
         with:
@@ -163,16 +101,13 @@ jobs:
           attests: type=sbom,generator=docker/scout
           platforms: linux/amd64,linux/arm64
           tags: |
-            mxmd/httpd:${{ env.APACHE_VERSION }}
-            mxmd/httpd:${{ env.APACHE_VERSION_MAJOR }}
-            mxmd/httpd:${{ env.APACHE_VERSION }}-${{ env.BUILD_TIMESTAMP }}
-            mxmd/httpd:${{ env.APACHE_VERSION_MAJOR }}-${{ env.BUILD_TIMESTAMP }}
+            mxmd/httpd:candidate-${{ github.run_id }}-${{ github.run_attempt }}
           build-args: |
             APACHE_VERSION=${{ env.APACHE_VERSION }}
             ALPINE_VERSION=${{ env.ALPINE_VERSION }}
           file: ./Dockerfile
 
-      - name: Push hardened Docker images
+      - name: Push candidate hardened Docker images
         id: push-httpd-hardened
         uses: docker/build-push-action@v7.0.0
         with:
@@ -184,16 +119,13 @@ jobs:
           attests: type=sbom,generator=docker/scout
           platforms: linux/amd64,linux/arm64
           tags: |
-            mxmd/httpd:${{ env.APACHE_VERSION }}-hardened
-            mxmd/httpd:${{ env.APACHE_VERSION_MAJOR }}-hardened
-            mxmd/httpd:${{ env.APACHE_VERSION }}-hardened-${{ env.BUILD_TIMESTAMP }}
-            mxmd/httpd:${{ env.APACHE_VERSION_MAJOR }}-hardened-${{ env.BUILD_TIMESTAMP }}
+            mxmd/httpd:candidate-${{ github.run_id }}-${{ github.run_attempt }}-hardened
           build-args: |
             APACHE_VERSION=${{ env.APACHE_VERSION }}
             ALPINE_VERSION=${{ env.ALPINE_VERSION }}
           file: ./Dockerfile.hardened
 
-      - name: Push hardened nonroot Docker images
+      - name: Push candidate hardened nonroot Docker images
         id: push-httpd-hardened-nonroot
         uses: docker/build-push-action@v7.0.0
         with:
@@ -205,14 +137,83 @@ jobs:
           attests: type=sbom,generator=docker/scout
           platforms: linux/amd64,linux/arm64
           tags: |
-            mxmd/httpd:${{ env.APACHE_VERSION }}-hardened-nonroot
-            mxmd/httpd:${{ env.APACHE_VERSION_MAJOR }}-hardened-nonroot
-            mxmd/httpd:${{ env.APACHE_VERSION }}-hardened-nonroot-${{ env.BUILD_TIMESTAMP }}
-            mxmd/httpd:${{ env.APACHE_VERSION_MAJOR }}-hardened-nonroot-${{ env.BUILD_TIMESTAMP }}
+            mxmd/httpd:candidate-${{ github.run_id }}-${{ github.run_attempt }}-hardened-nonroot
           build-args: |
             APACHE_VERSION=${{ env.APACHE_VERSION }}
             ALPINE_VERSION=${{ env.ALPINE_VERSION }}
           file: ./Dockerfile.hardened-nonroot
+
+      - name: Install Docker Scout for verification
+        if: inputs.cve_list != ''
+        run: |
+          curl --fail --silent --show-error --location \
+            https://raw.githubusercontent.com/docker/scout-cli/v1.20.3/install.sh \
+            --output "$RUNNER_TEMP/install-scout.sh"
+          sh "$RUNNER_TEMP/install-scout.sh" -b "$HOME/.docker/cli-plugins" v1.20.3
+
+      - name: Verify candidate improvements on both architectures
+        if: inputs.cve_list != ''
+        id: verify
+        env:
+          CANDIDATE_DIGESTS: >-
+            {"base":"${{ steps.push-httpd.outputs.digest }}",
+             "hardened":"${{ steps.push-httpd-hardened.outputs.digest }}",
+             "hardened-nonroot":"${{ steps.push-httpd-hardened-nonroot.outputs.digest }}"}
+        run: python3 .github/scripts/verify_docker_images.py
+
+      - name: Save candidate verification reports
+        if: always() && inputs.cve_list != ''
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: scout-verification
+          path: scout-verification/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Promote candidate digests to public tags
+        env:
+          BASE_DIGEST: ${{ steps.push-httpd.outputs.digest }}
+          HARDENED_DIGEST: ${{ steps.push-httpd-hardened.outputs.digest }}
+          NONROOT_DIGEST: ${{ steps.push-httpd-hardened-nonroot.outputs.digest }}
+        run: |
+          promote() {
+            local digest="$1" suffix="$2"
+            docker buildx imagetools create \
+              --tag "mxmd/httpd:${APACHE_VERSION}${suffix}" \
+              --tag "mxmd/httpd:${APACHE_VERSION_MAJOR}${suffix}" \
+              --tag "mxmd/httpd:${APACHE_VERSION}${suffix}-${BUILD_TIMESTAMP}" \
+              --tag "mxmd/httpd:${APACHE_VERSION_MAJOR}${suffix}-${BUILD_TIMESTAMP}" \
+              "mxmd/httpd@${digest}"
+          }
+          promote "$BASE_DIGEST" ""
+          promote "$HARDENED_DIGEST" "-hardened"
+          promote "$NONROOT_DIGEST" "-hardened-nonroot"
+
+      - name: Create or update release after publication
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SCOUT_REBUILD: ${{ inputs.cve_list != '' }}
+          VERIFIED_CVES: ${{ steps.verify.outputs.verified_cves }}
+          REMAINING_CVES: ${{ steps.verify.outputs.remaining_cves }}
+        run: |
+          TAG_NAME="httpd-${APACHE_VERSION}"
+          DOCKER_HUB_LINK="https://hub.docker.com/r/mxmd/httpd/tags?page=1&name=${APACHE_VERSION}"
+          if ! gh release view "$TAG_NAME" > /dev/null 2>&1; then
+            gh release create "$TAG_NAME" \
+              --target "$SOURCE_SHA" \
+              --title "Apache ${APACHE_VERSION} release" \
+              --notes "Release of Docker image for Apache ${APACHE_VERSION}. [View on Docker Hub]($DOCKER_HUB_LINK)"
+          fi
+          if [[ "$SCOUT_REBUILD" == "true" ]]; then
+            gh release view "$TAG_NAME" --json body -q .body > "$RUNNER_TEMP/release-notes.md"
+            {
+              printf '\n**Verified Scout rebuild (%s)**\n\n' "$(date -u +%Y-%m-%d)"
+              printf 'CVEs resolved across all variants and architectures: %s\n\n' "${VERIFIED_CVES:-none}"
+              printf 'Remaining high/critical CVEs: %s\n\n' "${REMAINING_CVES:-none}"
+              printf '[Before/after reports](%s/%s/actions/runs/%s)\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+            } >> "$RUNNER_TEMP/release-notes.md"
+            gh release edit "$TAG_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
 
       - name: Publish digest tag on GitHub
         if: ${{ steps.push-httpd.outputs.digest != '' }}
