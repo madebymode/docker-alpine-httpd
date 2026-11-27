@@ -48,7 +48,7 @@ def read_findings(path: Path) -> set[Finding]:
 
 def scan(reference: str, platform: str, report: Path, *, only_fixed: bool = False) -> set[Finding]:
     command = [
-        "docker", "scout", "cves", f"registry://{reference}",
+        "docker", "scout", "cves", reference if reference.startswith("oci-dir://") else f"registry://{reference}",
         "--platform", platform, "--only-severity", "high,critical",
         # Attached VEX statements can differ between otherwise identical images.
         # Compare package findings consistently, without author-based suppressions.

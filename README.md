@@ -313,7 +313,7 @@ The Docker image allows you to toggle between `production` and `development` set
 
 ### Builds, Tags, and Releases
 
-Publishing builds use Docker Buildx and QEMU for `linux/amd64` and `linux/arm64`. All three variants are built once under unique `candidate-RUN_ID-RUN_ATTEMPT` tags (with variant suffixes). Scout rebuilds must pass the verification gate before promotion; ordinary version updates and manual releases promote after successful builds. Promotion copies the exact candidate manifest indexes, preserving maximum-mode provenance and SBOM attestations, to these Docker Hub tags:
+Publishing builds use Docker Buildx and QEMU for `linux/amd64` and `linux/arm64`. All three variants are built once as local OCI layouts on the Actions runner; candidates are never pushed to Docker Hub. Scout rebuilds must pass the verification gate before promotion; ordinary version updates and manual releases promote after successful builds. After the gate, Skopeo copies every architecture and attestation from the local OCI layouts with digest preservation required, and Buildx adds the remaining release tags. Maximum-mode provenance and SBOM attestations are preserved for these Docker Hub tags:
 
 | Image variant | Published tag examples |
 | --- | --- |
@@ -341,7 +341,7 @@ The Scout workflow scans the published version tags for all three variants on bo
 
 Requested rebuilds pull base images and rebuild every layer. Before any public release tags move, Scout compares the exact candidate digests against the currently published digests for all six variant/platform combinations. This comparison includes **all high/critical findings**, including unfixed ones. Both scheduled scans and verification disable VEX author matching (`--vex-author '^$'`) so differences in attached VEX statements cannot hide package findings or make an unchanged package appear newly vulnerable. Publication requires at least one removed finding across those combinations and no newly introduced finding in any combination; scan failures and ineffective rebuilds block publication. Partial fixes are permitted, and a CVE is listed as resolved only when it is absent from every candidate variant and architecture.
 
-GitHub release notes are updated after promotion and list verified resolved CVEs, remaining high/critical CVEs, and a link to the run's reports. SARIF reports and package availability logs are saved in `scout-reports`; before/after reports, immutable digests, and the verification summary are saved in `scout-verification`. Both artifacts are retained for 30 days. Candidate tags remain available for inspecting rejected builds. Publishing jobs share a concurrency group to prevent overlapping promotion and verification runs.
+GitHub release notes are updated after promotion and list verified resolved CVEs, remaining high/critical CVEs, and a link to the run's reports. SARIF reports and package availability logs are saved in `scout-reports`; before/after reports, immutable digests, and the verification summary are saved in `scout-verification`. Both artifacts are retained for 30 days. Rejected candidate images stay on the temporary runner and are discarded with it; only verification reports are retained. Publishing jobs share a concurrency group to prevent overlapping promotion and verification runs.
 
 Run the workflow regression tests locally with:
 

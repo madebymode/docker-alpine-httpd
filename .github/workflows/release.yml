@@ -89,55 +89,55 @@ jobs:
         id: build-timestamp
         run: echo "BUILD_TIMESTAMP=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
 
-      - name: Push candidate Docker images
+      - name: Prepare local candidate directory
+        run: mkdir -p "$RUNNER_TEMP/candidates"
+
+      - name: Build local candidate Docker images
         id: push-httpd
         uses: docker/build-push-action@v7.0.0
         with:
-          push: true
+          push: false
           pull: true
           no-cache: ${{ inputs.fresh_build || false }}
           provenance: mode=max
           sbom: true
           attests: type=sbom,generator=docker/scout
           platforms: linux/amd64,linux/arm64
-          tags: |
-            mxmd/httpd:candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          outputs: type=oci,dest=${{ runner.temp }}/candidates/base,tar=false
           build-args: |
             APACHE_VERSION=${{ env.APACHE_VERSION }}
             ALPINE_VERSION=${{ env.ALPINE_VERSION }}
           file: ./Dockerfile
 
-      - name: Push candidate hardened Docker images
+      - name: Build local candidate hardened Docker images
         id: push-httpd-hardened
         uses: docker/build-push-action@v7.0.0
         with:
-          push: true
+          push: false
           pull: true
           no-cache: ${{ inputs.fresh_build || false }}
           provenance: mode=max
           sbom: true
           attests: type=sbom,generator=docker/scout
           platforms: linux/amd64,linux/arm64
-          tags: |
-            mxmd/httpd:candidate-${{ github.run_id }}-${{ github.run_attempt }}-hardened
+          outputs: type=oci,dest=${{ runner.temp }}/candidates/hardened,tar=false
           build-args: |
             APACHE_VERSION=${{ env.APACHE_VERSION }}
             ALPINE_VERSION=${{ env.ALPINE_VERSION }}
           file: ./Dockerfile.hardened
 
-      - name: Push candidate hardened nonroot Docker images
+      - name: Build local candidate hardened nonroot Docker images
         id: push-httpd-hardened-nonroot
         uses: docker/build-push-action@v7.0.0
         with:
-          push: true
+          push: false
           pull: true
           no-cache: ${{ inputs.fresh_build || false }}
           provenance: mode=max
           sbom: true
           attests: type=sbom,generator=docker/scout
           platforms: linux/amd64,linux/arm64
-          tags: |
-            mxmd/httpd:candidate-${{ github.run_id }}-${{ github.run_attempt }}-hardened-nonroot
+          outputs: type=oci,dest=${{ runner.temp }}/candidates/hardened-nonroot,tar=false
           build-args: |
             APACHE_VERSION=${{ env.APACHE_VERSION }}
             ALPINE_VERSION=${{ env.ALPINE_VERSION }}
@@ -159,6 +159,10 @@ jobs:
             {"base":"${{ steps.push-httpd.outputs.digest }}",
              "hardened":"${{ steps.push-httpd-hardened.outputs.digest }}",
              "hardened-nonroot":"${{ steps.push-httpd-hardened-nonroot.outputs.digest }}"}
+          CANDIDATE_LAYOUTS: >-
+            {"base":"${{ runner.temp }}/candidates/base",
+             "hardened":"${{ runner.temp }}/candidates/hardened",
+             "hardened-nonroot":"${{ runner.temp }}/candidates/hardened-nonroot"}
         run: python3 .github/scripts/verify_docker_images.py
 
       - name: Save candidate verification reports
@@ -170,24 +174,35 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-      - name: Promote candidate digests to public tags
+      - name: Install image publication tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes skopeo
+
+      - name: Publish verified local candidates to release tags
         env:
           BASE_DIGEST: ${{ steps.push-httpd.outputs.digest }}
           HARDENED_DIGEST: ${{ steps.push-httpd-hardened.outputs.digest }}
           NONROOT_DIGEST: ${{ steps.push-httpd-hardened-nonroot.outputs.digest }}
         run: |
-          promote() {
-            local digest="$1" suffix="$2"
+          publish() {
+            local variant="$1" digest="$2" suffix="$3"
+            # Copy every architecture and attestation without changing digests.
+            # No candidate tag or image is uploaded before verification passes.
+            skopeo copy --all --preserve-digests \
+              --digestfile "$RUNNER_TEMP/${variant}-published.digest" \
+              "oci:$RUNNER_TEMP/candidates/${variant}" \
+              "docker://mxmd/httpd:${APACHE_VERSION}${suffix}"
+            test "$(cat "$RUNNER_TEMP/${variant}-published.digest")" = "$digest"
             docker buildx imagetools create \
-              --tag "mxmd/httpd:${APACHE_VERSION}${suffix}" \
               --tag "mxmd/httpd:${APACHE_VERSION_MAJOR}${suffix}" \
               --tag "mxmd/httpd:${APACHE_VERSION}${suffix}-${BUILD_TIMESTAMP}" \
               --tag "mxmd/httpd:${APACHE_VERSION_MAJOR}${suffix}-${BUILD_TIMESTAMP}" \
               "mxmd/httpd@${digest}"
           }
-          promote "$BASE_DIGEST" ""
-          promote "$HARDENED_DIGEST" "-hardened"
-          promote "$NONROOT_DIGEST" "-hardened-nonroot"
+          publish "base" "$BASE_DIGEST" ""
+          publish "hardened" "$HARDENED_DIGEST" "-hardened"
+          publish "hardened-nonroot" "$NONROOT_DIGEST" "-hardened-nonroot"
 
       - name: Create or update release after publication
         env:

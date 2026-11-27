@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare candidate digests with published images before promoting Scout rebuilds."""
+"""Compare local OCI candidates with published images before publishing Scout rebuilds."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def compare(before: set[Finding], after: set[Finding]) -> tuple[set[tuple[str, s
     return previous - current, current - previous
 
 
-def verify(candidates: dict[str, str], reports_dir: Path) -> tuple[str, str]:
+def verify(candidates: dict[str, str], reports_dir: Path, layouts: dict[str, str]) -> tuple[str, str]:
     reports_dir.mkdir(parents=True, exist_ok=True)
     version = parse_env_file(Path(".env"))["APACHE_VERSION"]
     rows = ["| Image | Platform | Removed findings | New findings | Remaining findings |",
@@ -35,6 +35,10 @@ def verify(candidates: dict[str, str], reports_dir: Path) -> tuple[str, str]:
             candidate = candidates[variant]
             if not re.fullmatch(r"sha256:[0-9a-f]{64}", candidate):
                 raise ValueError(f"Invalid candidate digest: {candidate}")
+            layout = Path(layouts[variant]).resolve()
+            index = json.loads((layout / "index.json").read_text())
+            if [entry["digest"] for entry in index["manifests"]] != [candidate]:
+                raise ValueError(f"Local OCI layout does not match candidate digest: {variant}")
             baseline = resolve_digest(f"{IMAGE_REPO}:{tag}")
             evidence.append({"variant": variant, "baseline": baseline, "candidate": candidate})
             for platform in PLATFORMS:
@@ -43,7 +47,7 @@ def verify(candidates: dict[str, str], reports_dir: Path) -> tuple[str, str]:
                 # as remediation or hide a newly introduced high/critical issue.
                 before = scan(f"{IMAGE_REPO}@{baseline}", platform,
                               reports_dir / f"{variant}-{arch}-before.sarif.json")
-                after = scan(f"{IMAGE_REPO}@{candidate}", platform,
+                after = scan(f"oci-dir://{layout}", platform,
                              reports_dir / f"{variant}-{arch}-after.sarif.json")
                 removed, added = compare(before, after)
                 previous_cves.update(f.cve for f in before)
@@ -79,7 +83,8 @@ def verify(candidates: dict[str, str], reports_dir: Path) -> tuple[str, str]:
 
 def main() -> int:
     try:
-        fixed, remaining = verify(json.loads(os.environ["CANDIDATE_DIGESTS"]), Path("scout-verification"))
+        fixed, remaining = verify(json.loads(os.environ["CANDIDATE_DIGESTS"]), Path("scout-verification"),
+                                  json.loads(os.environ["CANDIDATE_LAYOUTS"]))
         if output_file := os.environ.get("GITHUB_OUTPUT"):
             with open(output_file, "a") as out:
                 out.write(f"verified_cves={fixed}\nremaining_cves={remaining}\n")

@@ -90,6 +90,19 @@ class ScoutReportsTest(unittest.TestCase):
                 self.assertEqual(arguments[arguments.index("--vex-author") + 1], "^$")
                 self.assertEqual("--only-fixed" in arguments, only_fixed)
 
+    def test_local_oci_scan_does_not_resolve_candidate_from_registry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            def run(*args, **kwargs):
+                self.report(root)
+                return subprocess.CompletedProcess([], 2, "", "")
+
+            with patch.object(scout_reports.subprocess, "run", side_effect=run) as command:
+                scout_reports.scan("oci-dir:///tmp/candidates/base", "linux/arm64", root / "report.json")
+            self.assertEqual(command.call_args.args[0][3], "oci-dir:///tmp/candidates/base")
+
+
 
 class AvailabilityTest(unittest.TestCase):
     def probe(self, stdout="", returncode=0):
@@ -134,6 +147,15 @@ class AvailabilityTest(unittest.TestCase):
 
 
 class PublicationTest(unittest.TestCase):
+    def layouts(self, root):
+        layouts = {}
+        for variant in CANDIDATES:
+            layout = root / variant
+            layout.mkdir()
+            (layout / "index.json").write_text(json.dumps({"manifests": [{"digest": DIGEST}]}))
+            layouts[variant] = str(layout)
+        return layouts
+
     def verify(self, pairs):
         scans = [findings for pair in pairs for findings in pair]
         with tempfile.TemporaryDirectory() as tmp:
@@ -141,9 +163,24 @@ class PublicationTest(unittest.TestCase):
                  patch.object(verification, "resolve_digest", return_value=DIGEST), \
                  patch.object(verification, "scan", side_effect=scans) as scan, \
                  patch.dict("os.environ", {}, clear=True), contextlib.redirect_stdout(io.StringIO()):
-                result = verification.verify(CANDIDATES, Path(tmp))
+                result = verification.verify(CANDIDATES, Path(tmp), self.layouts(Path(tmp)))
             self.assertEqual(scan.call_count, 12)
+            for call in scan.call_args_list[1::2]:
+                self.assertTrue(call.args[0].startswith("oci-dir://"))
+            self.assertEqual([call.args[1] for call in scan.call_args_list[1::2]],
+                             ["linux/amd64", "linux/arm64"] * 3)
             return result
+
+    def test_mismatched_local_candidate_blocks_publication_before_scan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            layouts = self.layouts(Path(tmp))
+            with patch.object(verification, "parse_env_file", return_value={"APACHE_VERSION": "2.4.71"}), \
+                 patch.object(verification, "scan") as scan, \
+                 patch.dict("os.environ", {}, clear=True), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(RuntimeError):
+                    verification.verify({name: "sha256:" + "b" * 64 for name in CANDIDATES},
+                                        Path(tmp), layouts)
+            scan.assert_not_called()
 
     def test_no_improvement_blocks_promotion(self):
         with self.assertRaises(RuntimeError):
@@ -181,7 +218,7 @@ class PublicationTest(unittest.TestCase):
                  patch.object(verification, "scan", side_effect=subprocess.TimeoutExpired("scout", 600)), \
                  patch.dict("os.environ", {}, clear=True), contextlib.redirect_stdout(io.StringIO()):
                 with self.assertRaises(RuntimeError):
-                    verification.verify(CANDIDATES, Path(tmp))
+                    verification.verify(CANDIDATES, Path(tmp), self.layouts(Path(tmp)))
 
 
 if __name__ == "__main__":
