@@ -50,6 +50,9 @@ def scan(reference: str, platform: str, report: Path, *, only_fixed: bool = Fals
     command = [
         "docker", "scout", "cves", f"registry://{reference}",
         "--platform", platform, "--only-severity", "high,critical",
+        # Attached VEX statements can differ between otherwise identical images.
+        # Compare package findings consistently, without author-based suppressions.
+        "--vex-author", "^$",
         "--exit-code", "--format", "sarif", "--output", str(report),
     ]
     if only_fixed:

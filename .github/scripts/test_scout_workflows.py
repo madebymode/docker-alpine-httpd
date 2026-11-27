@@ -71,6 +71,25 @@ class ScoutReportsTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     scout_reports.scan("image@" + DIGEST, "linux/amd64", root / "report.json")
 
+    def test_scans_disable_attached_vex_suppressions(self):
+        # Baselines and candidates can carry different VEX attestations even
+        # when the vulnerable package version has not changed.
+        for only_fixed in (False, True):
+            with self.subTest(only_fixed=only_fixed), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+
+                def run(*args, **kwargs):
+                    self.report(root)
+                    return subprocess.CompletedProcess([], 2, "", "")
+
+                with patch.object(scout_reports.subprocess, "run", side_effect=run) as command:
+                    findings = scout_reports.scan("image@" + DIGEST, "linux/amd64",
+                                                 root / "report.json", only_fixed=only_fixed)
+                self.assertEqual(findings, {SSL})
+                arguments = command.call_args.args[0]
+                self.assertEqual(arguments[arguments.index("--vex-author") + 1], "^$")
+                self.assertEqual("--only-fixed" in arguments, only_fixed)
+
 
 class AvailabilityTest(unittest.TestCase):
     def probe(self, stdout="", returncode=0):
